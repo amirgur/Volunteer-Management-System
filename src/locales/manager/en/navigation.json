@@ -3,6 +3,8 @@
   "dashboard": "Dashboard",
   "calendar": "Calendar Management",
   "appointments": "Appointments & Attendance",
+  "allAttendance": "All Attendance",
+  "facilityAttendance": "Facility Attendance",
   "volunteers": "Volunteer Management",
   "residents": "Resident Management",
   "matchingRules": "Matching Rules",

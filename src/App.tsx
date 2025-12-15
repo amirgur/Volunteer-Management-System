@@ -37,6 +37,8 @@ import Residents from "@/pages/manager/Residents";
 import MatchingRules from "@/pages/manager/MatchingRules";
 import Reports from "@/pages/manager/Reports";
 import Settings from "@/pages/manager/Settings";
+import FacilityAttendance from "@/pages/manager/FacilityAttendance";
+import AllAttendance from "@/pages/manager/AllAttendance";
 
 const queryClient = new QueryClient();
 
@@ -150,6 +152,14 @@ const App = () => (
                 <Route
                   path="/manager/settings"
                   element={<RoleRoute role="manager" element={<Settings />} />}
+                />
+                <Route
+                  path="/manager/facility-attendance"
+                  element={<RoleRoute role="manager" element={<FacilityAttendance />} />}
+                />
+                <Route
+                  path="/manager/attendance"
+                  element={<RoleRoute role="manager" element={<AllAttendance />} />}
                 />
 
                 {/* Catch-all 404 */}

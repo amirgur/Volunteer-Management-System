@@ -15,7 +15,8 @@ import {
   ClipboardList,
   Bell,
   Sliders,
-  Clock
+  Clock,
+  MapPin
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -103,6 +104,30 @@ const ManagerSidebar = ({ isOpen, onClose, isMobile, onLogout }: ManagerSidebarP
           >
             <Clock className="h-5 w-5 text-slate-500" />
             <span>{t('appointments')}</span>
+          </Link>
+
+          <Link
+            to="/manager/attendance"
+            className={cn(
+              "flex items-center px-3 py-2 text-sm font-medium rounded-md space-x-3",
+              isActive("/manager/attendance") ? "bg-slate-100 text-slate-900" : "text-slate-700 hover:bg-slate-50",
+              isRTL && "space-x-reverse text-right"
+            )}
+          >
+            <ClipboardList className="h-5 w-5 text-slate-500" />
+            <span>{t('allAttendance')}</span>
+          </Link>
+
+          <Link
+            to="/manager/facility-attendance"
+            className={cn(
+              "flex items-center px-3 py-2 text-sm font-medium rounded-md space-x-3",
+              isActive("/manager/facility-attendance") ? "bg-slate-100 text-slate-900" : "text-slate-700 hover:bg-slate-50",
+              isRTL && "space-x-reverse text-right"
+            )}
+          >
+            <MapPin className="h-5 w-5 text-slate-500" />
+            <span>{t('facilityAttendance')}</span>
           </Link>
 
           <Link

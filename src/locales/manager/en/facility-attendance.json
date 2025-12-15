@@ -1,0 +1,33 @@
+{
+  "title": "Facility Attendance",
+  "subtitle": "Track volunteers who checked in to the facility without appointments",
+  "description": "Shows facility check-ins/out recorded by volunteers. This does not replace appointment attendance.",
+  "tabs": {
+    "active": "Active now",
+    "byDate": "By date"
+  },
+  "searchPlaceholder": "Search volunteer name or ID…",
+  "count": "{{count}} record(s)",
+  "loading": "Loading…",
+  "loadError": "Firestore error",
+  "empty": {
+    "active": "No volunteers are currently checked in.",
+    "byDate": "No facility attendance records for this date."
+  },
+  "table": {
+    "volunteer": "Volunteer",
+    "checkIn": "Check-in",
+    "checkOut": "Check-out",
+    "duration": "Duration",
+    "status": "Status",
+    "notes": "Notes"
+  },
+  "badges": {
+    "active": "Active",
+    "completed": "Completed"
+  },
+  "minutes": "{{count}} min",
+  "unknownVolunteer": "Unknown volunteer"
+}
+
+

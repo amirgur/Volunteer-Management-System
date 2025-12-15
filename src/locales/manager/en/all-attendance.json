@@ -1,0 +1,39 @@
+{
+  "title": "All Attendance",
+  "subtitle": "Facility + appointment attendance in one place",
+  "description": "Shows all attendance records. Facility records come from volunteer check-in/out. Appointment records come from session attendance.",
+  "tabs": {
+    "all": "All",
+    "appointment": "Appointments",
+    "facility": "Facility"
+  },
+  "searchPlaceholder": "Search volunteer name or ID…",
+  "count": "{{count}} record(s)",
+  "loading": "Loading…",
+  "empty": "No attendance records match your filters.",
+  "loadError": "Firestore error",
+  "table": {
+    "type": "Type",
+    "volunteer": "Volunteer",
+    "date": "Date",
+    "time": "Time",
+    "session": "Session / Appointment",
+    "status": "Status",
+    "notes": "Notes"
+  },
+  "badges": {
+    "facility": "Facility",
+    "appointment": "Appointment"
+  },
+  "unknownVolunteer": "Unknown volunteer",
+  "categories": {
+    "music": "Music Session",
+    "gardening": "Gardening Session",
+    "beading": "Beading Session",
+    "art": "Art Session",
+    "baking": "Baking Session",
+    "general": "General Session"
+  }
+}
+
+

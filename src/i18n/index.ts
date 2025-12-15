@@ -14,6 +14,8 @@ import enResidents from '../locales/manager/en/residents.json';
 import enMatchingRules from '../locales/manager/en/matching-rules.json';
 import enReports from '../locales/manager/en/reports.json';
 import enSettings from '../locales/manager/en/settings.json';
+import enFacilityAttendance from '../locales/manager/en/facility-attendance.json';
+import enAllAttendance from '../locales/manager/en/all-attendance.json';
 // ---------- Volunteer (en) ----------
 import enIndex from '../locales/volunteer/en/index.json';
 import enLogin from '../locales/volunteer/en/login.json';
@@ -35,6 +37,8 @@ import heResidents from '../locales/manager/he/residents.json';
 import heMatchingRules from '../locales/manager/he/matching-rules.json';
 import heReports from '../locales/manager/he/reports.json';
 import heSettings from '../locales/manager/he/settings.json';
+import heFacilityAttendance from '../locales/manager/he/facility-attendance.json';
+import heAllAttendance from '../locales/manager/he/all-attendance.json';
 // ---------- Volunteer (he) ----------
 import heIndex from '../locales/volunteer/he/index.json';
 import heLogin from '../locales/volunteer/he/login.json';
@@ -59,6 +63,8 @@ const resources = {
     'manager-appointments': enAppointments,
     'manager-calendar': enCalendar,
     'manager-dashboard': enDashboard,
+    'manager-facility-attendance': enFacilityAttendance,
+    'manager-all-attendance': enAllAttendance,
     // Volunteer translations
     translation: enIndex, // Default namespace for homepage
     login: enLogin,
@@ -82,6 +88,8 @@ const resources = {
     'manager-appointments': heAppointments,
     'manager-calendar': heCalendar,
     'manager-dashboard': heDashboard,
+    'manager-facility-attendance': heFacilityAttendance,
+    'manager-all-attendance': heAllAttendance,
     // Volunteer translations
     translation: heIndex, // Default namespace for homepage
     login: heLogin,
