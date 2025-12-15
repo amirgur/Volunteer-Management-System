@@ -95,7 +95,13 @@
     "attendanceConfirmedLate": "Attendance confirmed (marked as late)!",
     "errorConfirmingAttendance": "Error confirming attendance. Please try again.",
     "markedAsUnableToAttend": "Marked as unable to attend.",
-    "errorCancellingAttendance": "Error cancelling attendance. Please try again."
+    "errorCancellingAttendance": "Error cancelling attendance. Please try again.",
+    "facilityAlreadyCheckedIn": "You're already checked in.",
+    "facilityNotCheckedIn": "You are not currently checked in.",
+    "facilityCheckInSuccess": "Checked in to the facility!",
+    "facilityCheckOutSuccess": "Checked out from the facility!",
+    "facilityCheckInError": "Error checking in. Please try again.",
+    "facilityCheckOutError": "Error checking out. Please try again."
   },
   "sessionCategories": {
     "music": "Music Session",
@@ -104,7 +110,20 @@
     "art": "Art Session",
     "baking": "Baking Session",
     "custom": "Custom Session",
-    "general": "General Session"
+    "general": "General Session",
+    "facility": "Facility Visit"
+  },
+  "facility": {
+    "title": "Facility Attendance",
+    "description": "Check in when you arrive at the facility, even if you don’t have an appointment.",
+    "prompt": "Tap check-in to record that you’re currently at the facility.",
+    "checkIn": "Check In",
+    "checkingIn": "Checking in...",
+    "checkOut": "Check Out",
+    "checkingOut": "Checking out...",
+    "checkedIn": "You're checked in",
+    "checkedInAt": "Checked in at {{time}}",
+    "notCheckedIn": "Not checked in"
   },
   "sessionType": "Session Type",
   "session": "Session",

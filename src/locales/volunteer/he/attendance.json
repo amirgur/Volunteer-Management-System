@@ -95,7 +95,13 @@
     "attendanceConfirmedLate": "הנוכחות אושרה (סומנה כאיחור)!",
     "errorConfirmingAttendance": "שגיאה באישור הנוכחות. אנא נסה שוב.",
     "markedAsUnableToAttend": "סומן כמי שלא יכול להגיע.",
-    "errorCancellingAttendance": "שגיאה בביטול הנוכחות. אנא נסה שוב."
+    "errorCancellingAttendance": "שגיאה בביטול הנוכחות. אנא נסה שוב.",
+    "facilityAlreadyCheckedIn": "אתה כבר מסומן כנוכח במוסד.",
+    "facilityNotCheckedIn": "אינך מסומן כנוכח במוסד כרגע.",
+    "facilityCheckInSuccess": "סומנת כנוכח במוסד!",
+    "facilityCheckOutSuccess": "סיום נוכחות במוסד נרשם בהצלחה!",
+    "facilityCheckInError": "שגיאה בסימון נוכחות במוסד. אנא נסה שוב.",
+    "facilityCheckOutError": "שגיאה בסיום נוכחות במוסד. אנא נסה שוב."
   },
   "sessionCategories": {
     "music": "פגישת מוזיקה",
@@ -104,7 +110,20 @@
     "art": "פגישת אמנות",
     "baking": "פגישת אפייה",
     "custom": "פגישה מותאמת אישית",
-    "general": "פגישה כללית"
+    "general": "פגישה כללית",
+    "facility": "ביקור במוסד"
+  },
+  "facility": {
+    "title": "נוכחות במוסד",
+    "description": "סמן הגעה כשאתה מגיע למוסד, גם אם אין לך פגישה מתוכננת.",
+    "prompt": "לחץ על סימון הגעה כדי לרשום שאתה נמצא כעת במוסד.",
+    "checkIn": "סמן הגעה",
+    "checkingIn": "מסמן הגעה...",
+    "checkOut": "סמן יציאה",
+    "checkingOut": "מסמן יציאה...",
+    "checkedIn": "אתה מסומן כנוכח",
+    "checkedInAt": "סומנת כנוכח בשעה {{time}}",
+    "notCheckedIn": "לא מסומן כנוכח"
   },
   "sessionType": "סוג פגישה",
   "session": "פגישה",

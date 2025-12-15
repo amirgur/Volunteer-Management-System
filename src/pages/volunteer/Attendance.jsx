@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Globe, Clock, Users, Check, X, AlertCircle, TrendingUp, Award,
   FileText, CheckCircle2, XCircle, History, CalendarDays,
-  CalendarClock, ChevronRight
+  CalendarClock, ChevronRight, MapPin
 } from 'lucide-react';
 import {
   collection, getDocs, query, where, orderBy, limit, doc,
@@ -507,7 +507,9 @@ const useAttendanceHistory = (username, userId) => {
       });
 
       const enrichedHistory = records.map(record => {
-        const appointmentData = calendarData[record.appointmentId];
+        // Facility attendance (no appointment)
+        const isFacility = record.attendanceType === 'facility' || !record.appointmentId;
+        const appointmentData = isFacility ? null : calendarData[record.appointmentId];
 
         console.log('Enriching attendance record:', {
           recordId: record.id,
@@ -531,7 +533,15 @@ const useAttendanceHistory = (username, userId) => {
 
         // Calculate hours - try multiple sources
         let hours = 0;
-        if (appointmentData?.startTime && appointmentData?.endTime) {
+        if (isFacility && record.visitStartedAt && record.visitEndedAt) {
+          try {
+            const start = record.visitStartedAt.toDate();
+            const end = record.visitEndedAt.toDate();
+            hours = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60));
+          } catch (e) {
+            hours = 0;
+          }
+        } else if (appointmentData?.startTime && appointmentData?.endTime) {
           hours = getHoursFromTimeRange(appointmentData.startTime, appointmentData.endTime);
           console.log('Hours from appointmentData:', hours);
         } else if (record.startTime && record.endTime) {
@@ -549,8 +559,22 @@ const useAttendanceHistory = (username, userId) => {
         // Determine session type and title
         let sessionType = 'General Session';
         let title = 'Volunteer Session';
+        let timeText = record.time || 'Time not available';
         
-        if (appointmentData) {
+        if (isFacility) {
+          title = t('attendance.sessionCategories.facility');
+          sessionType = t('attendance.sessionCategories.facility');
+          const startTs = record.visitStartedAt || record.confirmedAt;
+          const endTs = record.visitEndedAt;
+          if (startTs && endTs) {
+            const startTime = startTs.toDate().toLocaleTimeString(i18n.language === 'he' ? 'he-IL' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+            const endTime = endTs.toDate().toLocaleTimeString(i18n.language === 'he' ? 'he-IL' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+            timeText = `${startTime} - ${endTime}`;
+          } else if (startTs) {
+            const startTime = startTs.toDate().toLocaleTimeString(i18n.language === 'he' ? 'he-IL' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+            timeText = `${startTime}`;
+          }
+        } else if (appointmentData) {
           if (appointmentData.isCustom && appointmentData.customLabel) {
             sessionType = appointmentData.customLabel;
             title = appointmentData.customLabel;
@@ -576,15 +600,13 @@ const useAttendanceHistory = (username, userId) => {
           id: record.id,
           date: recordDate.toISOString().split('T')[0],
           title: title,
-          time: appointmentData ?
-            `${appointmentData.startTime} - ${appointmentData.endTime}` :
-            record.time || 'Time not available',
+          time: appointmentData ? `${appointmentData.startTime} - ${appointmentData.endTime}` : timeText,
           status: historyStatus,
           hours: hours,
           notes: record.notes || '',
-          appointmentId: record.appointmentId,
+          appointmentId: record.appointmentId || null,
           sessionType: sessionType,
-          sessionCategory: appointmentData?.sessionCategory || 'general',
+          sessionCategory: isFacility ? 'facility' : (appointmentData?.sessionCategory || 'general'),
           isCustom: appointmentData?.isCustom || false,
           customLabel: appointmentData?.customLabel,
           source: 'attendance'
@@ -638,9 +660,19 @@ const useAttendanceHistory = (username, userId) => {
       console.log('Found attendance records:', attendanceRecords.length, attendanceRecords);
 
       // Filter to only include completed or missed sessions
-      const validAttendanceRecords = attendanceRecords.filter(record => 
-        record.status === 'present' || record.status === 'absent'
-      );
+      // Note: facility check-ins are allowed without appointments, but an "open" check-in
+      // is shown in the Today tab (not in History).
+      const validAttendanceRecords = attendanceRecords.filter(record => {
+        const isValidStatus = record.status === 'present' || record.status === 'absent';
+        if (!isValidStatus) return false;
+
+        const isFacility = record.attendanceType === 'facility' || !record.appointmentId;
+        if (isFacility) {
+          return Boolean(record.visitEndedAt);
+        }
+
+        return true;
+      });
 
       console.log('Valid attendance records:', validAttendanceRecords.length, validAttendanceRecords);
 
@@ -1065,6 +1097,11 @@ const Attendance = () => {
   const [showLangOptions, setShowLangOptions] = useState(false);
   const [currentLanguage, setCurrentLanguage] = useState(i18n.language);
   const [loadingStates, setLoadingStates] = useState({});
+  const [facilityAttendance, setFacilityAttendance] = useState({
+    loading: false,
+    record: null,
+    checkedIn: false
+  });
   const langToggleRef = useRef(null);
 
   // Custom hooks
@@ -1084,6 +1121,21 @@ const Attendance = () => {
 
   // Use the volunteer from today's sessions as the primary volunteer object
   const volunteer = todayVolunteer || historyVolunteer;
+
+  const getTodayStr = () => new Date().toISOString().split('T')[0];
+
+  const formatTimeFromTimestamp = (ts) => {
+    try {
+      if (!ts) return '';
+      const d = typeof ts.toDate === 'function' ? ts.toDate() : new Date(ts);
+      return d.toLocaleTimeString(i18n.language === 'he' ? 'he-IL' : 'en-US', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return '';
+    }
+  };
 
   // Robust language direction management
   const applyLanguageDirection = (lang) => {
@@ -1124,6 +1176,151 @@ const Attendance = () => {
       setCurrentLanguage(i18n.language);
     }
   }, [i18n.language, currentLanguage]);
+
+  // Facility attendance: fetch today's active check-in (if any)
+  useEffect(() => {
+    const fetchFacilityAttendance = async () => {
+      if (!volunteer?.id) return;
+
+      setFacilityAttendance(prev => ({ ...prev, loading: true }));
+
+      try {
+        const todayStr = getTodayStr();
+        const q = query(
+          attendanceRef,
+          where('volunteerId.id', '==', volunteer.id),
+          where('attendanceType', '==', 'facility'),
+          where('date', '==', todayStr),
+          orderBy('confirmedAt', 'desc'),
+          limit(5)
+        );
+
+        const snap = await getDocs(q);
+        const records = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const activeRecord = records.find(r => !r.visitEndedAt);
+
+        setFacilityAttendance({
+          loading: false,
+          record: activeRecord || null,
+          checkedIn: Boolean(activeRecord)
+        });
+      } catch (error) {
+        console.error('Error fetching facility attendance:', error);
+        setFacilityAttendance(prev => ({ ...prev, loading: false }));
+      }
+    };
+
+    fetchFacilityAttendance();
+  }, [volunteer?.id]);
+
+  const handleFacilityCheckIn = async () => {
+    if (!volunteer) {
+      toast({
+        title: t('attendance.notifications.volunteerInfoNotAvailable'),
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (facilityAttendance.checkedIn) {
+      toast({
+        title: t('attendance.notifications.facilityAlreadyCheckedIn'),
+        variant: "default"
+      });
+      return;
+    }
+
+    setFacilityAttendance(prev => ({ ...prev, loading: true }));
+
+    try {
+      const now = Timestamp.now();
+      const todayStr = getTodayStr();
+
+      const attendanceData = {
+        attendanceType: 'facility',
+        appointmentId: null,
+        date: todayStr,
+        volunteerId: { id: volunteer.id, type: 'volunteer' },
+        status: 'present',
+        confirmedBy: 'volunteer',
+        confirmedAt: now,
+        visitStartedAt: now,
+        visitEndedAt: null,
+        notes: `Facility check-in by volunteer at ${new Date().toLocaleTimeString()}`
+      };
+
+      const docRef = await addDoc(attendanceRef, attendanceData);
+
+      setFacilityAttendance({
+        loading: false,
+        record: { id: docRef.id, ...attendanceData },
+        checkedIn: true
+      });
+
+      toast({
+        title: t('attendance.notifications.facilityCheckInSuccess'),
+        variant: "default"
+      });
+
+      await refreshHistory();
+    } catch (error) {
+      console.error('Error checking in (facility):', error);
+      toast({
+        title: t('attendance.notifications.facilityCheckInError'),
+        variant: "destructive"
+      });
+      setFacilityAttendance(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+  const handleFacilityCheckOut = async () => {
+    if (!volunteer) {
+      toast({
+        title: t('attendance.notifications.volunteerInfoNotAvailable'),
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!facilityAttendance.record?.id) {
+      toast({
+        title: t('attendance.notifications.facilityNotCheckedIn'),
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setFacilityAttendance(prev => ({ ...prev, loading: true }));
+
+    try {
+      const now = Timestamp.now();
+      const ref = doc(attendanceRef, facilityAttendance.record.id);
+      await updateDoc(ref, {
+        visitEndedAt: now,
+        notes: `Facility check-out by volunteer at ${new Date().toLocaleTimeString()}`
+      });
+
+      setFacilityAttendance({
+        loading: false,
+        record: null,
+        checkedIn: false
+      });
+
+      toast({
+        title: t('attendance.notifications.facilityCheckOutSuccess'),
+        variant: "default"
+      });
+
+      await refreshHistory();
+    } catch (error) {
+      console.error('Error checking out (facility):', error);
+      toast({
+        title: t('attendance.notifications.facilityCheckOutError'),
+        variant: "destructive"
+      });
+      setFacilityAttendance(prev => ({ ...prev, loading: false }));
+    }
+  };
 
   // Handle click outside language toggle to close dropdown
   useEffect(() => {
@@ -1377,6 +1574,77 @@ const Attendance = () => {
           {activeTab === 'today' && (
             <div className="responsive-content-grid">
               <div className="main-session-area">
+                {/* Facility Attendance (no appointment required) */}
+                <div className="session-card">
+                  <div className="session-card-content">
+                    <div className="session-card-header">
+                      <h2 className="session-card-title">{t('attendance.facility.title')}</h2>
+                      <MapPin className="history-detail-icon" />
+                    </div>
+                    <p className="session-card-description">{t('attendance.facility.description')}</p>
+
+                    {facilityAttendance.checkedIn ? (
+                      <div className="status-message status-success">
+                        <div className="status-message-header">
+                          <CheckCircle2 className="status-message-icon" />
+                          <p className="status-message-title">
+                            {t('attendance.facility.checkedIn')}
+                          </p>
+                        </div>
+                        <p className="status-message-text">
+                          {t('attendance.facility.checkedInAt', { time: formatTimeFromTimestamp(facilityAttendance.record?.visitStartedAt || facilityAttendance.record?.confirmedAt) })}
+                        </p>
+                        <div className="action-buttons">
+                          <button
+                            onClick={handleFacilityCheckOut}
+                            className="btn btn-cancel"
+                            disabled={facilityAttendance.loading}
+                          >
+                            {facilityAttendance.loading ? (
+                              <>
+                                <div className="loading-spinner"></div>
+                                <span className="btn-text">{t('attendance.facility.checkingOut')}</span>
+                              </>
+                            ) : (
+                              <>
+                                <X className="btn-icon" />
+                                <span className="btn-text">{t('attendance.facility.checkOut')}</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="status-message status-info">
+                        <div className="status-message-header">
+                          <AlertCircle className="status-message-icon" />
+                          <p className="status-message-title">{t('attendance.facility.notCheckedIn')}</p>
+                        </div>
+                        <p className="status-message-text">{t('attendance.facility.prompt')}</p>
+                        <div className="action-buttons">
+                          <button
+                            onClick={handleFacilityCheckIn}
+                            className="btn btn-confirm"
+                            disabled={facilityAttendance.loading}
+                          >
+                            {facilityAttendance.loading ? (
+                              <>
+                                <div className="loading-spinner"></div>
+                                <span className="btn-text">{t('attendance.facility.checkingIn')}</span>
+                              </>
+                            ) : (
+                              <>
+                                <Check className="btn-icon" />
+                                <span className="btn-text">{t('attendance.facility.checkIn')}</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 {todaySessions.length > 0 ? (
                   <div className="sessions-container">
                     <h2 className="sessions-title">

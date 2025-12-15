@@ -171,13 +171,31 @@ export interface Appointment {
 // ATTENDANCE
 export type AttendanceStatus = 'present' | 'absent' | 'late';
 export type AttendanceConfirmedBy = 'volunteer' | 'manager';
+export type AttendanceType = 'appointment' | 'facility';
 export interface Attendance {
   id: string;
-  appointmentId: string;
+  /**
+   * Appointment-linked attendance uses appointmentId.
+   * Facility attendance (no appointment) omits this field.
+   */
+  appointmentId?: string | null;
+  /**
+   * Defaults to 'appointment' when appointmentId is present.
+   */
+  attendanceType?: AttendanceType;
   volunteerId: ParticipantId;
   status: AttendanceStatus;
   confirmedBy: AttendanceConfirmedBy;
   confirmedAt: Timestamp;
+  /**
+   * Optional date (YYYY-MM-DD). Used mainly for facility attendance/history grouping.
+   */
+  date?: string;
+  /**
+   * Optional timestamps for facility check-in/out.
+   */
+  visitStartedAt?: Timestamp | null;
+  visitEndedAt?: Timestamp | null;
   notes?: string | null;
 }
 
