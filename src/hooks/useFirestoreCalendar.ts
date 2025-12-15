@@ -79,7 +79,8 @@ function ensureSlotShape(raw: any): CalendarSlotUI {
     createdAt: convertTimestamp(raw.createdAt),
     approvedVolunteers: raw.approvedVolunteers || [],
     isRecurring: !!raw.isRecurring,
-    recurringPattern: raw.recurringPattern ?? undefined
+    recurringPattern: raw.recurringPattern ?? undefined,
+    recurrenceRuleId: raw.recurrenceRuleId ?? undefined
   };
 }
 function ensureAppointmentUI(raw: any): AppointmentUI {

@@ -153,6 +153,45 @@ export interface CalendarSlot {
   notes?: string | null;
   isRecurring: boolean;
   recurringPattern?: RecurringPattern;
+  /**
+   * Optional link to a rule in `recurrence_rules` (used by rolling materialization).
+   * Legacy recurring series may not have this set.
+   */
+  recurrenceRuleId?: string;
+}
+
+// RECURRENCE RULES (rolling materialization)
+export interface RecurrenceRule {
+  id: string;
+  /**
+   * Disable a series without deleting the document (useful for audit/history).
+   */
+  isActive: boolean;
+  createdAt: Timestamp;
+  /**
+   * Series starts at this date (YYYY-MM-DD) and repeats according to `pattern`.
+   */
+  startDate: string; // YYYY-MM-DD
+  /**
+   * Template fields used when materializing slot instances.
+   */
+  startTime: string; // HH:mm
+  endTime: string; // HH:mm
+  period?: SlotPeriod;
+  isCustom: boolean;
+  customLabel?: string | null;
+  sessionCategory?: SessionCategory;
+  residentIds: string[];
+  maxCapacity: number;
+  notes?: string | null;
+  /**
+   * Default assigned participants for each instance (optional).
+   */
+  approvedVolunteers: ParticipantId[];
+  /**
+   * Recurrence pattern for this series. `parentSlotId` (if set) should match `id`.
+   */
+  pattern: RecurringPattern;
 }
 
 // APPOINTMENTS
@@ -301,6 +340,7 @@ export const attendanceRef = collection(db, 'attendance') as CollectionReference
 export const matching_rulesRef = collection(db, 'matching_rules') as CollectionReference<MatchingRule>;
 export const reportsRef = collection(db, 'reports') as CollectionReference<Report>;
 export const external_groupsRef = collection(db, 'external_groups') as CollectionReference<ExternalGroup>;
+export const recurrence_rulesRef = collection(db, 'recurrence_rules') as CollectionReference<RecurrenceRule>;
 
 // Helper functions to get document references
 export const getUserRef = (id: string) => doc(usersRef, id);
@@ -312,6 +352,7 @@ export const getAttendanceRef = (id: string) => doc(attendanceRef, id);
 export const getMatchingRuleRef = (id: string) => doc(matching_rulesRef, id);
 export const getReportRef = (id: string) => doc(reportsRef, id);
 export const getExternalGroupRef = (id: string) => doc(external_groupsRef, id);
+export const getRecurrenceRuleRef = (id: string) => doc(recurrence_rulesRef, id);
 
 // Helper function to convert Firestore document to typed object
 export const docToObject = <T>(doc: QueryDocumentSnapshot): T => {

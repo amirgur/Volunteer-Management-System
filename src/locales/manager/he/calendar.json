@@ -256,7 +256,7 @@
       "frequency": "תדירות",
       "interval": "מרווח",
       "endDate": "תאריך סיום",
-      "endDateDescription": "חייב להיות בטווח של שלושה חודשים מתאריך ההתחלה",
+      "endDateDescription": "מגדיר מתי הסדרה מסתיימת (המפגשים נוצרים אוטומטית לפי הצורך).",
       "daysOfWeek": "ימי השבוע",
       "frequencies": {
         "daily": "יומי",

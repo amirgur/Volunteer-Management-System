@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -66,11 +66,14 @@ import {
   VolunteerRequestStatus,
   RecurringPattern,
   RecurrenceFrequency,
-  attendanceRef
+  attendanceRef,
+  RecurrenceRule,
+  recurrence_rulesRef,
+  getRecurrenceRuleRef
 } from "@/services/firestore";
-import { generateRecurringSlots } from "@/utils/recurringSlots";
+import { getRecurringDateStringsInRange } from "@/utils/recurrenceMaterializer";
 import { db } from "@/lib/firebase";
-import { doc, updateDoc, deleteDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { doc, updateDoc, deleteDoc, collection, query, where, getDocs, onSnapshot, setDoc, getDoc } from "firebase/firestore";
 import { addAppointmentToHistory, updateAppointmentStatusInHistory, incrementSessionStats, decrementSessionStats, updateVolunteerAttendanceStats, decrementVolunteerAttendanceStats, removeAppointmentFromHistory, updateAppointmentTimeInHistory, updateAppointmentVolunteerIdsInHistory, updateAppointmentResidentIdsInHistory, incrementHoursOnly, decrementHoursOnly } from '@/services/engagement';
 import { AppointmentStatus } from '@/services/firestore';
 
@@ -470,6 +473,12 @@ const ManagerCalendar = () => {
   const { volunteers, loading: volunteersLoading } = useVolunteers();
   const { residents, loading: residentsLoading } = useResidents();
 
+  // Recurrence rules (rolling materialization)
+  const [recurrenceRules, setRecurrenceRules] = useState<RecurrenceRule[]>([]);
+  const [recurrenceRulesLoading, setRecurrenceRulesLoading] = useState(true);
+  const isMaterializingRef = useRef(false);
+  const lastMaterializeKeyRef = useRef<string>("");
+
   // Add state for volunteer search and pending changes in create session dialog
   const [volunteerSearch, setVolunteerSearch] = useState("");
   const [pendingVolunteerChanges, setPendingVolunteerChanges] = useState<{
@@ -545,7 +554,14 @@ const ManagerCalendar = () => {
               return sessionDate > selectedSlotDate;
             });
 
-          setHasFutureRecurringSessions(futureSessions.length > 0);
+          // Also consider the recurrence rule (future instances may not be materialized yet).
+          const rule = recurrenceRules.find(r => r.id === parentSlotId && r.isActive);
+          const ruleEndDate = rule?.pattern?.endDate;
+          const hasFutureByRule = rule
+            ? (!ruleEndDate || new Date(ruleEndDate) > selectedSlotDate)
+            : false;
+
+          setHasFutureRecurringSessions(futureSessions.length > 0 || hasFutureByRule);
         } catch (error) {
           console.error('Error checking future recurring sessions:', error);
           setHasFutureRecurringSessions(false);
@@ -556,7 +572,7 @@ const ManagerCalendar = () => {
     };
 
     checkFutureRecurringSessions();
-  }, [selectedSlot, slots]); // Add 'slots' as a dependency to re-check when calendar data changes
+  }, [selectedSlot, slots, recurrenceRules]); // Add 'slots' as a dependency to re-check when calendar data changes
 
   // Check if user is authenticated
   useEffect(() => {
@@ -565,6 +581,25 @@ const ManagerCalendar = () => {
       navigate("/login");
     }
   }, [navigate]);
+
+  // Subscribe to recurrence rules (rolling materialization)
+  useEffect(() => {
+    setRecurrenceRulesLoading(true);
+    const unsubscribe = onSnapshot(
+      recurrence_rulesRef,
+      (snapshot) => {
+        const rules = snapshot.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as RecurrenceRule[];
+        setRecurrenceRules(rules);
+        setRecurrenceRulesLoading(false);
+      },
+      (error) => {
+        console.error('Error loading recurrence rules:', error);
+        setRecurrenceRules([]);
+        setRecurrenceRulesLoading(false);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
 
   // Handle window resize
   useEffect(() => {
@@ -649,6 +684,175 @@ const ManagerCalendar = () => {
       };
     }
   };
+
+  /**
+   * Rolling materialization: ensure slot instances exist for the visible range + a small future buffer.
+   * We intentionally avoid backfilling the past (to avoid retroactively creating history/stats).
+   */
+  const materializeRecurrenceRulesForRange = async (
+    rangeStart: Date,
+    rangeEnd: Date,
+    rulesOverride?: RecurrenceRule[]
+  ) => {
+    if (isMaterializingRef.current) return;
+    if (!rulesOverride && recurrenceRulesLoading) return;
+    const rulesToUse = rulesOverride ?? recurrenceRules;
+    if (!rulesToUse || rulesToUse.length === 0) return;
+
+    isMaterializingRef.current = true;
+    try {
+      const today = toIsraelTime(new Date());
+      today.setHours(0, 0, 0, 0);
+
+      // Always ensure at least the next 60 days exist (so volunteers can see/request upcoming sessions).
+      const minEnd = toIsraelTime(addDays(today, 60));
+      minEnd.setHours(0, 0, 0, 0);
+
+      const start = toIsraelTime(rangeStart);
+      start.setHours(0, 0, 0, 0);
+      const end = toIsraelTime(rangeEnd);
+      end.setHours(0, 0, 0, 0);
+
+      const effectiveStart = start < today ? today : start;
+      const effectiveEnd = end > minEnd ? end : minEnd;
+
+      // Build a quick lookup of existing instances to keep this idempotent.
+      const existing = new Set<string>();
+      for (const s of slots) {
+        const ruleId = s.recurrenceRuleId || s.recurringPattern?.parentSlotId;
+        if (ruleId && s.date) {
+          existing.add(`${ruleId}|${s.date}`);
+        }
+      }
+
+      const activeRules = rulesToUse.filter(r => r?.isActive);
+      for (const rule of activeRules) {
+        const dateStrings = getRecurringDateStringsInRange({
+          seriesStartDate: rule.startDate,
+          pattern: rule.pattern,
+          rangeStart: effectiveStart,
+          rangeEnd: effectiveEnd
+        });
+
+        for (const dateStr of dateStrings) {
+          const key = `${rule.id}|${dateStr}`;
+          if (existing.has(key)) continue;
+
+          const slotId = `${rule.id}_${dateStr}`;
+          const slotRef = doc(db, 'calendar_slots', slotId);
+          const slotSnap = await getDoc(slotRef);
+          if (slotSnap.exists()) {
+            existing.add(key);
+            continue;
+          }
+
+          const approvedVolunteers = rule.approvedVolunteers || [];
+          const status = approvedVolunteers.length >= (rule.maxCapacity || 0) ? 'full' : 'open';
+          const isOpen = status === 'open';
+
+          const slotData: Omit<CalendarSlot, 'id'> = {
+            date: dateStr,
+            startTime: rule.startTime,
+            endTime: rule.endTime,
+            period: rule.isCustom ? null : (rule.period ?? null),
+            isCustom: !!rule.isCustom,
+            customLabel: rule.customLabel ?? null,
+            sessionCategory: rule.sessionCategory ?? null,
+            residentIds: rule.residentIds || [],
+            maxCapacity: rule.maxCapacity ?? 1,
+            volunteerRequests: [],
+            approvedVolunteers,
+            status: status as any,
+            appointmentId: null,
+            isOpen,
+            notes: rule.notes || "",
+            createdAt: Timestamp.fromDate(new Date()),
+            isRecurring: true,
+            recurringPattern: {
+              ...rule.pattern,
+              parentSlotId: rule.id
+            },
+            recurrenceRuleId: rule.id
+          };
+
+          await setDoc(slotRef, slotData);
+          existing.add(key);
+
+          // Create appointment (and history) only once, idempotently.
+          if (approvedVolunteers.length > 0) {
+            const apptRef = doc(db, 'appointments', slotId);
+            const apptSnap = await getDoc(apptRef);
+            if (!apptSnap.exists()) {
+              const timing = getSessionTiming(dateStr, rule.startTime, rule.endTime);
+              const apptStatus: AppointmentStatus =
+                timing === 'past' ? 'completed' : (timing === 'ongoing' ? 'inProgress' : 'upcoming');
+
+              const appointment: Omit<Appointment, 'id'> = {
+                calendarSlotId: slotId,
+                residentIds: rule.residentIds || [],
+                volunteerIds: approvedVolunteers,
+                status: apptStatus,
+                createdAt: Timestamp.fromDate(new Date()),
+                updatedAt: Timestamp.fromDate(new Date()),
+                notes: rule.notes || ""
+              };
+
+              await setDoc(apptRef, appointment);
+              await updateDoc(slotRef, { appointmentId: slotId });
+
+              // Engagement tracking: add to history for volunteers/residents.
+              for (const v of approvedVolunteers) {
+                if (v.type === 'volunteer') {
+                  await addAppointmentToHistory(v.id, {
+                    appointmentId: slotId,
+                    date: dateStr,
+                    startTime: rule.startTime,
+                    endTime: rule.endTime,
+                    residentIds: rule.residentIds || [],
+                    status: apptStatus
+                  }, 'volunteer');
+                }
+              }
+              for (const residentId of rule.residentIds || []) {
+                await addAppointmentToHistory(residentId, {
+                  appointmentId: slotId,
+                  date: dateStr,
+                  startTime: rule.startTime,
+                  endTime: rule.endTime,
+                  volunteerIds: approvedVolunteers,
+                  status: apptStatus
+                }, 'resident');
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error materializing recurrence rules:', e);
+    } finally {
+      isMaterializingRef.current = false;
+    }
+  };
+
+  // Trigger rolling materialization whenever the visible range or rules change.
+  useEffect(() => {
+    if (recurrenceRulesLoading) return;
+    if (!recurrenceRules || recurrenceRules.length === 0) return;
+
+    const today = toIsraelTime(new Date());
+    today.setHours(0, 0, 0, 0);
+
+    const rangeKey = `${formatIsraelTime(dateRange.start)}|${formatIsraelTime(dateRange.end)}|${recurrenceRules
+      .map(r => `${r.id}:${r.isActive}:${r.pattern?.endDate || ''}:${r.pattern?.frequency}:${r.pattern?.interval}`)
+      .sort()
+      .join(',')}`;
+
+    if (lastMaterializeKeyRef.current === rangeKey) return;
+    lastMaterializeKeyRef.current = rangeKey;
+
+    // Materialize for the current view; function clamps start to today and expands end by buffer.
+    void materializeRecurrenceRulesForRange(dateRange.start, dateRange.end);
+  }, [dateRange, recurrenceRulesLoading, recurrenceRules, slots]);
 
   // Jump to previous/next period based on current view
   const goToPrevious = () => {
@@ -1027,93 +1231,42 @@ const ManagerCalendar = () => {
         }
       }
 
-      // If this is a recurring session, update the parent slot with its own ID as parentSlotId
+      // If this is a recurring session: create a rule document and let rolling materialization
+      // create future instances on-demand (visible range + buffer).
       if (isRecurring && recurringPattern) {
+        const rulePattern: RecurringPattern = {
+          ...recurringPattern,
+          parentSlotId: newSlotId
+        };
+
+        // Update the "parent" slot to reference the series.
         await updateCalendarSlot(newSlotId, {
-          recurringPattern: {
-            ...recurringPattern,
-            parentSlotId: newSlotId
-          }
+          recurringPattern: rulePattern,
+          recurrenceRuleId: newSlotId
         });
 
-        // Generate and create all recurring instances and their appointments
-        const recurringSlots = generateRecurringSlots(createdSlot, recurringPattern, newSlotId);
-        for (const slot of recurringSlots) {
-          // For recurring instances, don't copy appointmentId from baseSlot
-          const slotWithoutAppointmentId: Omit<CalendarSlot, 'id'> = {
-            ...slot,
-            appointmentId: null // Ensure appointmentId is null for recurring instances initially
-          };
+        const ruleDoc: Omit<RecurrenceRule, 'id'> = {
+          isActive: true,
+          createdAt: Timestamp.fromDate(new Date()),
+          startDate: createdSlot.date,
+          startTime: createdSlot.startTime,
+          endTime: createdSlot.endTime,
+          period: createdSlot.period,
+          isCustom: createdSlot.isCustom,
+          customLabel: createdSlot.customLabel ?? null,
+          sessionCategory: createdSlot.sessionCategory ?? null,
+          residentIds: createdSlot.residentIds || [],
+          maxCapacity: createdSlot.maxCapacity,
+          notes: createdSlot.notes || "",
+          approvedVolunteers: createdSlot.approvedVolunteers || [],
+          pattern: rulePattern
+        };
 
-          const recurringSlotId = await addCalendarSlot(slotWithoutAppointmentId);
+        // Use the parent slot ID as the rule ID for easy linkage.
+        await setDoc(getRecurrenceRuleRef(newSlotId), ruleDoc);
 
-          // Create appointment for recurring slot if it has volunteers
-          if (selectedVolunteers.length > 0) {
-            const recurringAppointment: Omit<Appointment, 'id'> = {
-              calendarSlotId: recurringSlotId,
-              residentIds: slot.residentIds,
-              volunteerIds: selectedVolunteers.map(id => ({ id, type: 'volunteer' })),
-              status: isPastSession ? "completed" : (isOngoingSession ? "inProgress" : "upcoming"),
-              createdAt: Timestamp.fromDate(new Date()),
-              updatedAt: Timestamp.fromDate(new Date()),
-              notes: slot.notes
-            };
-            const recurringAppointmentId = await addAppointment(recurringAppointment);
-
-            // Update the recurring slot with the appointment ID
-            if (recurringAppointmentId) {
-              await updateCalendarSlot(recurringSlotId, {
-                appointmentId: recurringAppointmentId
-              });
-
-              // Engagement tracking: Add to history for each participant
-              // For volunteers
-              for (const volunteerId of selectedVolunteers) {
-                const entry = {
-                  appointmentId: recurringAppointmentId,
-                  date: slot.date,
-                  startTime: slot.startTime,
-                  endTime: slot.endTime,
-                  residentIds: slot.residentIds,
-                  status: (isPastSession ? 'completed' : (isOngoingSession ? 'inProgress' : 'upcoming')) as AppointmentStatus,
-                };
-                await addAppointmentToHistory(volunteerId, entry, 'volunteer');
-              }
-              // For residents
-              for (const residentId of slot.residentIds) {
-                const entry = {
-                  appointmentId: recurringAppointmentId,
-                  date: slot.date,
-                  startTime: slot.startTime,
-                  endTime: slot.endTime,
-                  volunteerIds: selectedVolunteers.map(id => ({ id, type: 'volunteer' as const })),
-                  status: (isPastSession ? 'completed' : (isOngoingSession ? 'inProgress' : 'upcoming')) as AppointmentStatus,
-                };
-                await addAppointmentToHistory(residentId, entry, 'resident');
-              }
-
-              // For past recurring sessions, automatically create attendance records marked as "Present"
-              const isRecurringSlotPast = isSessionInPast(slot.date, slot.startTime);
-              if (isRecurringSlotPast && recurringAppointmentId) {
-                const volunteerIds = selectedVolunteers.map(id => ({ id, type: 'volunteer' as "volunteer" }));
-
-                // Create attendance records for each volunteer for this recurring appointment
-                for (const volunteerId of volunteerIds) {
-                  await addAttendance({
-                    appointmentId: recurringAppointmentId,
-                    volunteerId: {
-                      id: volunteerId.id,
-                      type: volunteerId.type
-                    },
-                    status: 'present',
-                    notes: 'Automatically marked as present for past recurring session',
-                    confirmedBy: 'manager'
-                  });
-                }
-              }
-            }
-          }
-        }
+        // Immediately materialize a small horizon so the calendar/volunteers can see upcoming instances.
+        await materializeRecurrenceRulesForRange(dateRange.start, dateRange.end, [{ id: newSlotId, ...ruleDoc } as RecurrenceRule]);
       }
 
       // Reset form state
@@ -2846,6 +2999,10 @@ const ManagerCalendar = () => {
 
       // Delete in parallel: external group first (if exists), then appointment, then calendar slot
       await Promise.all([
+        // If this slot is the "parent" of a recurring series, delete its rule so future instances won't be re-created
+        (selectedSlot.isRecurring && selectedSlot.recurringPattern?.parentSlotId === selectedSlot.id)
+          ? deleteDoc(getRecurrenceRuleRef(selectedSlot.id))
+          : Promise.resolve(),
         // Delete external group if exists
         externalGroup ? deleteDoc(doc(db, 'external_groups', externalGroup.id)) : Promise.resolve(),
         // Delete appointment if exists
@@ -3000,6 +3157,15 @@ const ManagerCalendar = () => {
         ...appointmentIdsToDelete.map(id => deleteDoc(doc(db, 'appointments', id))),
         ...attendanceIdsToDelete.map(id => deleteDoc(doc(db, 'attendance', id)))
       ]);
+
+      // If this series is rule-backed, truncate the rule so future instances won't be re-materialized.
+      try {
+        await updateDoc(getRecurrenceRuleRef(parentSlotId), {
+          "pattern.endDate": selectedSlot.date
+        });
+      } catch (e) {
+        // Ignore if rule doesn't exist (legacy pre-created series).
+      }
 
       toast({
         title: t('messages.recurringSessionsDeleted'),
@@ -3557,9 +3723,9 @@ const ManagerCalendar = () => {
                             onCheckedChange={(checked) => {
                               setIsRecurring(checked as boolean);
                               if (checked) {
-                                // Set default end date to one month from start date
+                                // Set a reasonable default end date; actual instances are materialized on-demand.
                                 const defaultEndDate = new Date(newSlot.date);
-                                defaultEndDate.setMonth(defaultEndDate.getMonth() + 1);
+                                defaultEndDate.setMonth(defaultEndDate.getMonth() + 6);
                                 setRecurringPattern(prev => ({
                                   ...prev,
                                   endDate: formatIsraelTime(defaultEndDate)
@@ -3635,28 +3801,12 @@ const ManagerCalendar = () => {
                               value={recurringPattern.endDate || ''}
                               onChange={(e) => {
                                 const selectedDate = e.target.value;
-                                const startDate = new Date(newSlot.date);
-                                const endDate = new Date(selectedDate);
-                                const maxDate = new Date(startDate);
-                                maxDate.setMonth(maxDate.getMonth() + 3);
-                                if (endDate > maxDate) {
-                                  setRecurringPattern(prev => ({
-                                    ...prev,
-                                    endDate: formatIsraelTime(maxDate)
-                                  }));
-                                } else {
-                                  setRecurringPattern(prev => ({
-                                    ...prev,
-                                    endDate: selectedDate
-                                  }));
-                                }
+                                setRecurringPattern(prev => ({
+                                  ...prev,
+                                  endDate: selectedDate || undefined
+                                }));
                               }}
                               min={newSlot.date}
-                              max={(() => {
-                                const maxDate = new Date(newSlot.date);
-                                maxDate.setMonth(maxDate.getMonth() + 3);
-                                return formatIsraelTime(maxDate);
-                              })()}
                               required
                               className="h-10 bg-white border-slate-300 focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0"
                             />

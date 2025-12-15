@@ -256,7 +256,7 @@
       "frequency": "Frequency",
       "interval": "Interval",
       "endDate": "End Date",
-      "endDateDescription": "Must be within three months from start date",
+      "endDateDescription": "Defines when the series stops (sessions are generated automatically as needed).",
       "daysOfWeek": "Days of Week",
       "frequencies": {
         "daily": "Daily",
